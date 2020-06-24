@@ -1,3 +1,5 @@
+import math
+
 import parallel
 
 STATE_EMPTY = 0
@@ -41,9 +43,13 @@ class CoconetJob(parallel.ParallelJob):
                     action.fail("Invalid parameter.")
                 else:
                     print("[Coconet]: Generating voices...")
+                    midi_in: pretty_midi.PrettyMIDI = action.parameter[0]
+                    time = int(math.ceil(midi_in.get_end_time())) * 4
+
+                    print("[Coconet]: Generating for", time, "steps")
                     output = self._model.run_generation(
                         gen_batch_size=action.parameter[1],
-                        piece_length=16,
+                        piece_length=time,
                         total_gibbs_steps=96,
                         temperature=0.99
                     )
