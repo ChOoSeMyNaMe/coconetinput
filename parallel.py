@@ -1,7 +1,7 @@
 import queue
 import multiprocessing
 from abc import ABC, abstractmethod
-from typing import Tuple, Union
+from typing import Tuple, Union, Callable, List
 
 
 class CommandException(Exception):
@@ -34,12 +34,45 @@ class CommandAction:
     def finish_nowait(self, value=None):
         self._owner.send_nowait(self._return_cmd, value)
 
+class InvocationHandler:
+    def __init__(self, cmd, cmd_result, handler: Callable[["CommandAction"], None]):
+        self.handler = handler
+        self.cmd_result = cmd_result
+        self.cmd = cmd
+
+    def process(self, actor: "ChannelActor") -> bool:
+        action = actor.invoked(self.cmd, self.cmd_result)
+        if action:
+            self.handler(action)
+            return True
+        return False
+
+    def __eq__(self, other):
+        if isinstance(other, InvocationHandler):
+            return self.cmd == other.cmd and self.cmd_result == other.cmd_result
+        return False
+
 
 class ChannelActor:
     def __init__(self, send: Union[queue.Queue, multiprocessing.Queue],
                  receive: Union[queue.Queue, multiprocessing.Queue]):
         self._send = send
         self._receive = receive
+        self._handlers: List["InvocationHandler"] = []
+
+    def register(self, cmd, cmd_result, handler: Callable[["CommandAction"], None]):
+        item = InvocationHandler(cmd, cmd_result, handler)
+        if item not in self._handlers:
+            self._handlers.append(item)
+
+    def unregister(self, cmd, cmd_result):
+        remove = None
+        for item in self._handlers:
+            if item.cmd == cmd and item.cmd_result == cmd_result:
+                remove = item
+                break
+        if remove is not None:
+            self._handlers.remove(remove)
 
     def send(self, cmd, value):
         self._send.put((cmd, value))
@@ -109,6 +142,10 @@ class ChannelActor:
         if result[0]:
             return CommandAction(self, cmd, result[1], result_cmd)
         return None
+
+    def handle_invocations(self):
+        for handler in self._handlers:
+            handler.process(self)
 
 
 class CommandChannel:
