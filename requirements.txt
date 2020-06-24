@@ -1,0 +1,3 @@
+PyQt5~=5.15.0
+EasyProcess~=0.3
+watchdog~=0.10.2
