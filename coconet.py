@@ -5,7 +5,7 @@ STATE_LOADED = 1
 
 CMD_LOAD = (0, 1)  # (folderpath) -> None
 CMD_STATE = (2, 3)  # () -> STATE
-CMD_GENERATE = (4, 5)  # (pretty_midi.PrettyMIDI) -> List[pretty_midi.PrettyMIDI]
+CMD_GENERATE = (4, 5)  # (pretty_midi.PrettyMIDI, batch_count) -> List[pretty_midi.PrettyMIDI]
 CMD_EXIT = (6, 7)  # () -> bool
 
 
@@ -37,12 +37,12 @@ class CoconetJob(parallel.ParallelJob):
             if action:
                 if self._model is None:
                     action.fail("No model is loaded.")
-                elif not isinstance(action.parameter, pretty_midi.PrettyMIDI):
+                elif not isinstance(action.parameter[0], pretty_midi.PrettyMIDI):
                     action.fail("Invalid parameter.")
                 else:
                     print("[Coconet]: Generating voices...")
                     output = self._model.run_generation(
-                        gen_batch_size=3,
+                        gen_batch_size=action.parameter[1],
                         piece_length=16,
                         total_gibbs_steps=96,
                         temperature=0.99

@@ -224,7 +224,7 @@ def on_change(path: str):
         print("[FileObserver]: Sending MIDI to Coconet...")
         midi_in = midi.PrettyMIDI(path)
         result = COCONET_PROCESS.channel.sender.invoke(
-            *coconet.CMD_GENERATE, midi_in
+            *coconet.CMD_GENERATE, (midi_in, 1)
         )
 
         print("[FileObserver]: Checking for open output editors...")
