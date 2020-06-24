@@ -10,10 +10,13 @@ import easyprocess
 import time
 import watchdog.observers
 import watchdog.events
+import coconet
+import pretty_midi as midi
 
 EDITOR_PATH = r"D:\Temp\MidiEditor\MidiEditor.exe"
 
 GUI_THREAD: qt.QtThread = None
+COCONET_PROCESS: coconet.CoconetJob = None
 
 
 def create_empty_mid(name: str) -> str:
@@ -35,18 +38,23 @@ class Editor:
         self.process: easyprocess.EasyProcess = None
         self.worker = threading.Thread(target=self._work)
         self.path = create_empty_mid("output.mid")
+        print("[MidiEditor]: Created empty MIDI at", self.path)
 
     def _work(self):
         self.process = easyprocess.EasyProcess([EDITOR_PATH, self.path])
+        print("[MidiEditor]: Starting...")
         self.process.start()
+        print("[MidiEditor]: Started...")
         while self.running:
             if self.running and not self.process.is_alive():
-                print("Restarting")
+                print("[MidiEditor]: Exited unexpectedly. Restarting...")
                 self.process = easyprocess.EasyProcess([EDITOR_PATH, self.path])
                 self.process.start()
             time.sleep(0.1)
+        print("[MidiEditor]: Exiting...")
         if self.process.is_alive():
             self.process.stop()
+        print("[MidiEditor]: Exited...")
 
     def start(self):
         if not self.running:
@@ -76,6 +84,7 @@ class FileWatcher(watchdog.events.FileSystemEventHandler):
 
 
 def on_change(path: str):
+    print("[FileObserver]: File changed.")
     result = GUI_THREAD.channel.sender.invoke(
         *qt.CMD_SHOW_QUESTION,
         (
@@ -84,34 +93,67 @@ def on_change(path: str):
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
     )
+
     if result == QtWidgets.QMessageBox.Yes:
+        print("[FileObserver]: Opening Progressdialog...")
         GUI_THREAD.channel.sender.invoke(
             *qt.CMD_OPEN_PROGRESS, ("Generating", "Generating voices...", (0, 0))
         )
-        print("Sleep")
-        time.sleep(5)
-        print("Send")
+
+        print("[FileObserver]: Sending MIDI to Coconet...")
+        midi_in = midi.PrettyMIDI(path)
+        result = COCONET_PROCESS.channel.sender.invoke(
+            *coconet.CMD_GENERATE, midi_in
+        )
+
+        print("[FileObserver]: Saving results...")
+        for i, midi_out in enumerate(result):
+            midi_out.write(f"batch{i}.mid")
+
+        print("[FileObserver]: Closing Progressdialog...")
         GUI_THREAD.channel.sender.invoke(*qt.CMD_CLOSE_PROGRESS)
-        print("End")
 
 
 def main():
-    global GUI_THREAD
+    global GUI_THREAD, COCONET_PROCESS
+
+    print("[main]: Starting Coconet-Process...")
+    COCONET_PROCESS = coconet.CoconetJob()
+    COCONET_PROCESS.start()
+
+    print("[main]: Loading model in Coconet...")
+    COCONET_PROCESS.channel.sender.invoke_failing(*coconet.CMD_LOAD, "pretrained")
+
+    print("[main]: Checking state of Coconet...")
+    if not COCONET_PROCESS.channel.sender.invoke(*coconet.CMD_STATE) == coconet.STATE_LOADED:
+        print("[main]: Invalid state.")
+        exit(-1)
+
+    print("[main]: Starting MidiEditor...")
     editor = run_editor()
 
+    print("[main]: Starting FileObserver...")
     observer = watchdog.observers.Observer()
     handler = FileWatcher(editor.path, on_change)
     observer.schedule(handler, ".")
     observer.start()
 
+    print("[main]: Starting GUI...")
     GUI_THREAD = qt.QtThread()
     GUI_THREAD.start()
 
+    print("[main]: Ready. Press any key to exit the program.")
     input()
 
+    print("[main]: Shutting down Coconet...")
+    COCONET_PROCESS.shutdown()
+
+    print("[main]: Shutting FileObserver...")
     observer.stop()
-    editor.stop()
     observer.join()
+
+    print("[main]: Shutting MidiEditor...")
+    editor.stop()
     editor.worker.join()
 
 

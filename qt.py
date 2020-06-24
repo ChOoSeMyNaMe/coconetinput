@@ -56,15 +56,18 @@ class QtThread:
 
     def _work(self):
         self._running = True
+        print("[GUI]: Starting...")
         self._app = QtWidgets.QApplication([])
+        print("[GUI]: Waiting for commands...")
         while self.running:
             self.channel.receiver.handle_invocations()
             time.sleep(0.1)
 
-        print("app exit")
+        print("[GUI]: Exiting.")
         self._running = False
 
     def _on_show_msg(self, action: "parallel.CommandAction"):
+        print("[GUI]: Showing message...")
         msg = QtWidgets.QMessageBox()
         msg.setWindowTitle(action.parameter[0])
         msg.setText(action.parameter[1])
@@ -73,6 +76,7 @@ class QtThread:
         action.finish(msg.result())
 
     def _on_show_question(self, action: "parallel.CommandAction"):
+        print("[GUI]: Showing question...")
         msg = QtWidgets.QMessageBox()
         msg.setWindowTitle(action.parameter[0])
         msg.setText(action.parameter[1])
@@ -84,6 +88,7 @@ class QtThread:
         action.finish(msg.result())
 
     def _on_open_progress(self, action: "parallel.CommandAction"):
+        print("[GUI]: Opening progress...")
         self._progress = QtWidgets.QProgressDialog()
         self._progress.setWindowTitle(action.parameter[0])
         self._progress.setLabelText(action.parameter[1])
@@ -103,11 +108,13 @@ class QtThread:
         self.channel.receiver.handle_invocations()
 
     def _on_update_progress(self, action: "parallel.CommandAction"):
+        print("[GUI]: Updating progress...")
         if self._progress is not None:
             self._progress.setValue(action.parameter)
         action.finish()
 
     def _on_close_progress(self, action: "parallel.CommandAction"):
+        print("[GUI]: Closing progress...")
         if self._progress is not None:
             self._progress.close()
             self._progress = None
