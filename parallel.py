@@ -34,6 +34,7 @@ class CommandAction:
     def finish_nowait(self, value=None):
         self._owner.send_nowait(self._return_cmd, value)
 
+
 class InvocationHandler:
     def __init__(self, cmd, cmd_result, handler: Callable[["CommandAction"], None]):
         self.handler = handler
@@ -129,11 +130,11 @@ class ChannelActor:
         while self.received_cmd(cmd):
             pass
 
-    def invoke(self, cmd, result_cmd, value) -> any:
+    def invoke(self, cmd, result_cmd, value=None) -> any:
         self.send(cmd, value)
         return self.receive_value(result_cmd)
 
-    def invoke_failing(self, cmd, result_cmd, value) -> any:
+    def invoke_failing(self, cmd, result_cmd, value=None) -> any:
         self.send(cmd, value)
         return self.receive_value_failing(result_cmd)
 
@@ -188,4 +189,3 @@ class ParallelJob(multiprocessing.Process, ABC):
     @abstractmethod
     def work(self, receiver: "ChannelActor"):
         pass
-

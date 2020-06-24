@@ -13,7 +13,7 @@ import watchdog.events
 
 EDITOR_PATH = r"D:\Temp\MidiEditor\MidiEditor.exe"
 
-GUI_THREAD = None
+GUI_THREAD: qt.QtThread = None
 
 
 def create_empty_mid(name: str) -> str:
@@ -84,7 +84,15 @@ def on_change(path: str):
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
         )
     )
-    print(result == QtWidgets.QMessageBox.Yes)
+    if result == QtWidgets.QMessageBox.Yes:
+        GUI_THREAD.channel.sender.invoke(
+            *qt.CMD_OPEN_PROGRESS, ("Generating", "Generating voices...", (0, 0))
+        )
+        print("Sleep")
+        time.sleep(5)
+        print("Send")
+        GUI_THREAD.channel.sender.invoke(*qt.CMD_CLOSE_PROGRESS)
+        print("End")
 
 
 def main():

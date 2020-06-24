@@ -7,9 +7,9 @@ import time
 
 CMD_SHOW_MSG = (0, 1)  # (title, text) -> result
 CMD_SHOW_QUESTION = (2, 3)  # (title, text, [opt] options) -> result
-CMD_OPEN_PROGRESS = (4, 5)  # (title, text, range) -> handle
-CMD_UPDATE_PROGRESS = (6, 7)  # (handle, value) -> None
-CMD_CLOSE_PROGRESS = (8, 9)  # (handle) -> None
+CMD_OPEN_PROGRESS = (4, 5)  # (title, text, range, disableCancel=True) -> None
+CMD_UPDATE_PROGRESS = (6, 7)  # (value) -> None
+CMD_CLOSE_PROGRESS = (8, 9)  # () -> None
 
 
 def _bring_to_front(window):
@@ -28,9 +28,13 @@ class QtThread:
         self._app = None
         self._timer = None
         self._running = False
+        self._progress: QtWidgets.QProgressDialog = None
 
         self._add_handler(*CMD_SHOW_MSG, self._on_show_msg)
         self._add_handler(*CMD_SHOW_QUESTION, self._on_show_question)
+        self._add_handler(*CMD_OPEN_PROGRESS, self._on_open_progress)
+        self._add_handler(*CMD_UPDATE_PROGRESS, self._on_update_progress)
+        self._add_handler(*CMD_CLOSE_PROGRESS, self._on_close_progress)
 
 
     @property
@@ -79,3 +83,34 @@ class QtThread:
         self._app.exec_()
         action.finish(msg.result())
 
+    def _on_open_progress(self, action: "parallel.CommandAction"):
+        self._progress = QtWidgets.QProgressDialog()
+        self._progress.setWindowTitle(action.parameter[0])
+        self._progress.setLabelText(action.parameter[1])
+        self._progress.setRange(*action.parameter[2])
+        if len(action.parameter) < 4 or action.parameter[3]:
+            self._progress.setCancelButton(None)
+
+        self._timer = QtCore.QTimer()
+        self._timer.setInterval(100)
+        self._timer.timeout.connect(self._progress_update)
+        self._timer.start()
+        _bring_to_front(self._progress)
+        action.finish()
+        self._app.exec_()
+
+    def _progress_update(self):
+        self.channel.receiver.handle_invocations()
+
+    def _on_update_progress(self, action: "parallel.CommandAction"):
+        if self._progress is not None:
+            self._progress.setValue(action.parameter)
+        action.finish()
+
+    def _on_close_progress(self, action: "parallel.CommandAction"):
+        if self._progress is not None:
+            self._progress.close()
+            self._progress = None
+            self._timer.stop()
+            self._timer = None
+        action.finish()
