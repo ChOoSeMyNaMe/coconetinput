@@ -85,44 +85,8 @@ def get_midi_output() -> str:
     return names[index]
 
 
-def create_empty_mid(name: str) -> str:
-    path = os.path.join(os.getcwd(), name)
-    tmp = midi.PrettyMIDI()
-    tmp.write(path)
-    print("[main]: Created empty MIDI at", path)
-    return path
-
-
-def run_editor_input() -> "Editor":
-    editor = Editor(create_empty_mid("output.mid"))
-    editor.ensure_setting(EDITOR_KEY_PORT_IN, MIDI_IN)
-    editor.ensure_setting(EDITOR_KEY_PORT_OUT, MIDI_OUT)
-    editor.ensure_setting(EDITOR_KEY_CONNECT_PORTS, True)
-    editor.start()
-    return editor
-
-
-def close_editor_output():
-    if EDITOR_OUTPUT_PROCESS is not None:
-        if EDITOR_OUTPUT_PROCESS.process.is_alive():
-            print("[MidiEditor] Closing Editor for output...")
-            EDITOR_OUTPUT_PROCESS.stop()
-            EDITOR_OUTPUT_PROCESS.join()
-
-
-def run_editor_output(file):
-    editor = Editor(file, False)
-    editor.ensure_setting(EDITOR_KEY_PORT_IN, "")
-    editor.ensure_setting(EDITOR_KEY_PORT_OUT, MIDI_OUT)
-    editor.ensure_setting(EDITOR_KEY_CONNECT_PORTS, False)
-    editor.start()
-    global EDITOR_OUTPUT_PROCESS
-    EDITOR_OUTPUT_PROCESS = editor
-
-
 class Editor:
-    def __init__(self, midi_path: str, restart: bool = True):
-        self.restart = restart
+    def __init__(self, midi_path: str):
         self.running = False
         self.process: easyprocess.EasyProcess = None
         self.worker = threading.Thread(target=self._work)
@@ -130,7 +94,16 @@ class Editor:
         self._settings: QSettings = None
         self._ensured_settings: Dict[str, any] = dict()
         self._overwritten_settings: Dict[str, any] = dict()
+        self._exit_handler: Callable[[], bool] = None
         print("[MidiEditor]: Opening MIDI at", self.path)
+
+    @property
+    def exit_handler(self):
+        return self._exit_handler
+
+    @exit_handler.setter
+    def exit_handler(self, value):
+        self._exit_handler = value
 
     def ensure_setting(self, key: str, value: any):
         self._ensured_settings[key] = value
@@ -150,6 +123,11 @@ class Editor:
         if self._settings is None:
             self._settings = QSettings("MidiEditor", "NONE")
 
+    def _on_exit(self) -> bool:
+        if self._exit_handler is not None:
+            return self._exit_handler()
+        return False
+
     def _work(self):
         self._ensure_settings()
         self.process = easyprocess.EasyProcess([EDITOR_PATH, self.path])
@@ -157,11 +135,15 @@ class Editor:
         self.process.start()
         print("[MidiEditor]: Started...")
         while self.running:
-            if self.running and self.restart and not self.process.is_alive():
-                print("[MidiEditor]: Exited unexpectedly. Restarting...")
-                self._ensure_settings()
-                self.process = easyprocess.EasyProcess([EDITOR_PATH, self.path])
-                self.process.start()
+            if self.running and not self.process.is_alive():
+                print("[MidiEditor]: Process exited unexpectedly.")
+                if self._on_exit():
+                    print("[MidiEditor]: Restarting process...")
+                    self._ensure_settings()
+                    self.process = easyprocess.EasyProcess([EDITOR_PATH, self.path])
+                    self.process.start()
+                else:
+                    self.running = False
             time.sleep(0.1)
         print("[MidiEditor]: Exiting...")
         if self.process.is_alive():
@@ -241,6 +223,53 @@ def on_change(path: str):
         GUI_THREAD.channel.sender.invoke(*qt.CMD_CLOSE_PROGRESS)
 
 
+def create_empty_mid(name: str) -> str:
+    path = os.path.join(os.getcwd(), name)
+    tmp = midi.PrettyMIDI()
+    tmp.write(path)
+    print("[main]: Created empty MIDI at", path)
+    return path
+
+
+def run_editor_input() -> "Editor":
+    editor = Editor(create_empty_mid("output.mid"))
+    editor.ensure_setting(EDITOR_KEY_PORT_IN, MIDI_IN)
+    editor.ensure_setting(EDITOR_KEY_PORT_OUT, MIDI_OUT)
+    editor.ensure_setting(EDITOR_KEY_CONNECT_PORTS, True)
+    editor.exit_handler = _on_editor_exit
+    editor.start()
+    return editor
+
+
+def _on_editor_exit() -> bool:
+    result = GUI_THREAD.channel.sender.invoke(
+        *qt.CMD_SHOW_QUESTION, (
+            "Exit",
+            "Do you want to exit the program?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel
+        )
+    )
+    return result != QtWidgets.QMessageBox.Yes
+
+
+def close_editor_output():
+    if EDITOR_OUTPUT_PROCESS is not None:
+        if EDITOR_OUTPUT_PROCESS.process.is_alive():
+            print("[MidiEditor] Closing Editor for output...")
+            EDITOR_OUTPUT_PROCESS.stop()
+            EDITOR_OUTPUT_PROCESS.join()
+
+
+def run_editor_output(file):
+    editor = Editor(file)
+    editor.ensure_setting(EDITOR_KEY_PORT_IN, "")
+    editor.ensure_setting(EDITOR_KEY_PORT_OUT, MIDI_OUT)
+    editor.ensure_setting(EDITOR_KEY_CONNECT_PORTS, False)
+    editor.start()
+    global EDITOR_OUTPUT_PROCESS
+    EDITOR_OUTPUT_PROCESS = editor
+
+
 def main():
     global GUI_THREAD, COCONET_PROCESS
 
@@ -269,8 +298,11 @@ def main():
     GUI_THREAD = qt.QtThread()
     GUI_THREAD.start()
 
-    print("[main]: Ready. Press any key to exit the program.")
-    input()
+    print("[main]: Ready.")
+    editor.join()
+
+    print("[main]: Shutting down child processes...")
+    close_editor_output()
 
     print("[main]: Shutting down Coconet...")
     COCONET_PROCESS.shutdown()
@@ -279,9 +311,6 @@ def main():
     observer.stop()
     observer.join()
 
-    print("[main]: Shutting MidiEditor...")
-    editor.stop()
-    editor.join()
     editor.restore_settings()
 
 
