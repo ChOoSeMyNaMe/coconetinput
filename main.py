@@ -116,6 +116,7 @@ class Editor:
         self.path = midi_path
         self._settings: QSettings = None
         self._ensured_settings: Dict[str, any] = dict()
+        self._overwritten_settings: Dict[str, any] = dict()
         print("[MidiEditor]: Opening MIDI at", self.path)
 
     def ensure_setting(self, key: str, value: any):
@@ -125,6 +126,10 @@ class Editor:
         print("[MidiEditor]: Ensuring correct settings...")
         self._load_settings()
         for key, value in self._ensured_settings.items():
+            if self._settings.contains(key):
+                self._overwritten_settings[key] = self._settings.value(key)
+            else:
+                self._overwritten_settings[key] = ""
             self._settings.setValue(key, value)
         self._settings.sync()
 
@@ -149,6 +154,12 @@ class Editor:
         if self.process.is_alive():
             self.process.stop()
         print("[MidiEditor]: Exited...")
+
+    def restore_settings(self):
+        if self._settings is not None:
+            print("[MidiEditor]: Restoring old settings...")
+            for key, value in self._overwritten_settings.items():
+                self._settings.setValue(key, value)
 
     def start(self):
         if not self.running:
@@ -252,6 +263,7 @@ def main():
     print("[main]: Shutting MidiEditor...")
     editor.stop()
     editor.worker.join()
+    editor.restore_settings()
 
 
 if __name__ == '__main__':
