@@ -15,6 +15,7 @@ EDITOR_PATH = r"D:\Temp\MidiEditor\MidiEditor.exe"
 
 GUI_THREAD = None
 
+
 def create_empty_mid(name: str) -> str:
     path = os.path.join(os.getcwd(), name)
     tmp = midi.PrettyMIDI()
@@ -26,6 +27,7 @@ def run_editor() -> "Editor":
     editor = Editor()
     editor.start()
     return editor
+
 
 class Editor:
     def __init__(self):
@@ -45,7 +47,6 @@ class Editor:
             time.sleep(0.1)
         if self.process.is_alive():
             self.process.stop()
-
 
     def start(self):
         if not self.running:
@@ -73,25 +74,37 @@ class FileWatcher(watchdog.events.FileSystemEventHandler):
                 else:
                     self._called = False
 
+
 def on_change(path: str):
-    print("Changed")
-    GUI_THREAD.channel.sender.invoke(*qt.CMD_SHOW_MSG, ("Test", "hello"))
+    result = GUI_THREAD.channel.sender.invoke(
+        *qt.CMD_SHOW_QUESTION,
+        (
+            "File changed",
+            "Do you want to generate the remaining voices?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+    )
+    print(result == QtWidgets.QMessageBox.Yes)
+
 
 def main():
     global GUI_THREAD
     editor = run_editor()
+
     observer = watchdog.observers.Observer()
     handler = FileWatcher(editor.path, on_change)
     observer.schedule(handler, ".")
     observer.start()
+
     GUI_THREAD = qt.QtThread()
     GUI_THREAD.start()
+
     input()
+
     observer.stop()
     editor.stop()
     observer.join()
     editor.worker.join()
-
 
 
 if __name__ == '__main__':
