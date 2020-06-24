@@ -19,12 +19,14 @@ EDITOR_PATH = r"D:\Temp\MidiEditor\MidiEditor.exe"
 
 GUI_THREAD: qt.QtThread = None
 COCONET_PROCESS: coconet.CoconetJob = None
+EDITOR_OUTPUT_PROCESS: "Editor" = None
 MIDI_IN: str = None
 MIDI_OUT: str = None
 
 EDITOR_KEY_PORT_IN = "in_port"
 EDITOR_KEY_PORT_OUT = "out_port"
 EDITOR_KEY_CONNECT_PORTS = "thru"
+
 
 def get_int_from_args(index: int) -> int:
     if len(sys.argv) > index:
@@ -99,16 +101,27 @@ def run_editor_input() -> "Editor":
     editor.start()
     return editor
 
-def run_editor_output(file) -> "Editor":
+
+def close_editor_output():
+    if EDITOR_OUTPUT_PROCESS is not None:
+        if EDITOR_OUTPUT_PROCESS.process.is_alive():
+            print("[MidiEditor] Closing Editor for output...")
+            EDITOR_OUTPUT_PROCESS.stop()
+            EDITOR_OUTPUT_PROCESS.join()
+
+
+def run_editor_output(file):
     editor = Editor(file, False)
     editor.ensure_setting(EDITOR_KEY_PORT_IN, "")
     editor.ensure_setting(EDITOR_KEY_PORT_OUT, MIDI_OUT)
     editor.ensure_setting(EDITOR_KEY_CONNECT_PORTS, False)
     editor.start()
-    return editor
+    global EDITOR_OUTPUT_PROCESS
+    EDITOR_OUTPUT_PROCESS = editor
+
 
 class Editor:
-    def __init__(self, midi_path: str, restart: bool=True):
+    def __init__(self, midi_path: str, restart: bool = True):
         self.restart = restart
         self.running = False
         self.process: easyprocess.EasyProcess = None
@@ -169,6 +182,9 @@ class Editor:
     def stop(self):
         self.running = False
 
+    def join(self):
+        self.worker.join()
+
 
 class FileWatcher(watchdog.events.FileSystemEventHandler):
     def __init__(self, path: str, action: Callable):
@@ -210,6 +226,9 @@ def on_change(path: str):
         result = COCONET_PROCESS.channel.sender.invoke(
             *coconet.CMD_GENERATE, midi_in
         )
+
+        print("[FileObserver]: Checking for open output editors...")
+        close_editor_output()
 
         print("[FileObserver]: Saving results...")
         file = os.path.join(os.getcwd(), "batch.mid")
@@ -262,7 +281,7 @@ def main():
 
     print("[main]: Shutting MidiEditor...")
     editor.stop()
-    editor.worker.join()
+    editor.join()
     editor.restore_settings()
 
 
